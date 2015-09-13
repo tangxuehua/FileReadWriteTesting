@@ -11,7 +11,10 @@ namespace FileReadWriteTesting
     class Program
     {
         static ConcurrentQueue<FileReader> _readerDict = new ConcurrentQueue<FileReader>();
+        static long _writtenCount;
         static long _readCount;
+        static long _basePosition;
+        static Stopwatch _watch;
 
         static void Main(string[] args)
         {
@@ -48,17 +51,17 @@ namespace FileReadWriteTesting
                 message[i] = 1;
             }
             var lockObject = new object();
-            var writtenCount = 0L;
             var fileStream = new FileStream(file, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 8192, FileOptions.SequentialScan);
             var writer = new BinaryWriter(fileStream);
-            var watch = Stopwatch.StartNew();
+
+            _watch = Stopwatch.StartNew();
 
             //多线程并发写文件，用锁，确保同一时刻只有一个线程在写文件
             for (var i = 0; i < threadCount; i++)
             {
                 Task.Factory.StartNew(() =>
                 {
-                    while (writtenCount < messageCount)
+                    while (_writtenCount < messageCount)
                     {
                         lock (lockObject)
                         {
@@ -66,18 +69,18 @@ namespace FileReadWriteTesting
                             writer.Write(message);
 
                             //递增写入次数，并判断是否要打印
-                            writtenCount++;
+                            _writtenCount++;
 
                             //每写入100次，刷一次磁盘；实际EQueue是采用异步定时刷盘，定时间隔默认是1s
-                            if (writtenCount % 100 == 0)
+                            if (_writtenCount % 100 == 0)
                             {
                                 fileStream.Flush();
                             }
 
                             //判断是否要打印
-                            if (writtenCount % 100000 == 0)
+                            if (_writtenCount % 100000 == 0)
                             {
-                                Console.WriteLine("Written {0} messages, position: {1}, timeSpent: {2}ms", writtenCount, fileStream.Position, watch.ElapsedMilliseconds);
+                                Console.WriteLine("Written {0} messages, position: {1}, timeSpent: {2}ms", _writtenCount, fileStream.Position, _watch.ElapsedMilliseconds);
                             }
                         }
                     }
@@ -93,17 +96,17 @@ namespace FileReadWriteTesting
             var messageSize = int.Parse(ConfigurationManager.AppSettings["messageSize"]);               //一次读取的单个消息的大小，字节为单位
             var messageCount = int.Parse(ConfigurationManager.AppSettings["messageCount"]);             //总共要读取的消息的个数
             var message = new byte[messageSize];
-            var watch = Stopwatch.StartNew();
             var fileReader = CreateFileReader(file, FileOptions.SequentialScan);
             var lockObject = new object();
-            var readCount = 0L;
+
+            _watch = Stopwatch.StartNew();
 
             //多线程并发读文件
             for (var i = 0; i < threadCount; i++)
             {
                 Task.Factory.StartNew(() =>
                 {
-                    while (readCount < messageCount)
+                    while (_readCount < messageCount)
                     {
                         lock (lockObject)
                         {
@@ -111,10 +114,10 @@ namespace FileReadWriteTesting
                             fileReader.Reader.Read(message, 0, message.Length);
 
                             //递增读取次数，并判断是否要打印
-                            readCount++;
-                            if (readCount % 100000 == 0)
+                            _readCount++;
+                            if (_readCount % 100000 == 0)
                             {
-                                Console.WriteLine("Read {0} messages, position: {1}, timeSpent: {2}ms", readCount, fileReader.FileStream.Position, watch.ElapsedMilliseconds);
+                                Console.WriteLine("Read {0} messages, position: {1}, timeSpent: {2}ms", _readCount, fileReader.FileStream.Position, _watch.ElapsedMilliseconds);
                             }
                         }
                     }
@@ -134,8 +137,7 @@ namespace FileReadWriteTesting
             //先初始化好所有的BinaryReader实例
             InitializeFileReaders(file, fileReaderCount, FileOptions.RandomAccess);
 
-            var index = 0L;
-            var watch = Stopwatch.StartNew();
+            _watch = Stopwatch.StartNew();
 
             //多线程并行读取文件
             for (var i = 0; i < threadCount; i++)
@@ -149,7 +151,7 @@ namespace FileReadWriteTesting
 
                     while (_readCount < messageCount)
                     {
-                        var basePosition = Interlocked.Increment(ref index);
+                        var basePosition = Interlocked.Increment(ref _basePosition);
                         var offset = random.Next(offsetMin, offsetMax);
                         var position = basePosition + offset;
                         if (position < 0)
@@ -160,13 +162,13 @@ namespace FileReadWriteTesting
                         {
                             position = position - messageSize;
                         }
-                        ReadFile(message, position, watch);
+                        ReadFile(message, position);
                     }
                 });
             }
         }
 
-        static void ReadFile(byte[] message, long position, Stopwatch watch)
+        static void ReadFile(byte[] message, long position)
         {
             var fileReader = GetFileReader();
             try
@@ -181,7 +183,7 @@ namespace FileReadWriteTesting
                 var count = Interlocked.Increment(ref _readCount);
                 if (count % 100000 == 0)
                 {
-                    Console.WriteLine("Read {0} messages, position: {1}, timeSpent: {2}ms", count, position, watch.ElapsedMilliseconds);
+                    Console.WriteLine("Read {0} messages, position: {1}, timeSpent: {2}ms", count, position, _watch.ElapsedMilliseconds);
                 }
             }
             catch (Exception ex)
