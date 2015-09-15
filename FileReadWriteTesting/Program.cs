@@ -10,7 +10,7 @@ namespace FileReadWriteTesting
 {
     class Program
     {
-        static ConcurrentQueue<FileReader> _readerDict = new ConcurrentQueue<FileReader>();
+        static ConcurrentQueue<FileReader> _readerQueue = new ConcurrentQueue<FileReader>();
         static long _writtenCount;
         static long _readCount;
         static long _basePosition;
@@ -199,7 +199,7 @@ namespace FileReadWriteTesting
         {
             for (var i = 0; i < readerCount; i++)
             {
-                _readerDict.Enqueue(CreateFileReader(file, options));
+                _readerQueue.Enqueue(CreateFileReader(file, options));
             }
         }
         static FileReader CreateFileReader(string file, FileOptions options)
@@ -211,7 +211,7 @@ namespace FileReadWriteTesting
         static FileReader GetFileReader()
         {
             FileReader reader;
-            while (!_readerDict.TryDequeue(out reader))
+            while (!_readerQueue.TryDequeue(out reader))
             {
                 Thread.Sleep(1);
             }
@@ -219,7 +219,7 @@ namespace FileReadWriteTesting
         }
         static void ReturnFileReader(FileReader reader)
         {
-            _readerDict.Enqueue(reader);
+            _readerQueue.Enqueue(reader);
         }
         class FileReader
         {
